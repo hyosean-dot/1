@@ -10,7 +10,7 @@
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     body { margin: 0; background: #fff8f1; color: #34323a; font-family: system-ui, -apple-system, "Malgun Gothic", sans-serif; min-height: 100dvh; padding: 14px; }
     button, input, select { font: inherit; }
-    button { min-height: 46px; border: 0; border-radius: 14px; cursor: pointer; font-weight: 700; }
+    button { min-height: 46px; border: 0; border-radius: 14px; cursor: pointer; font-weight: 700; touch-action: manipulation; }
     button:disabled { opacity: .55; cursor: not-allowed; }
     .app { max-width: 520px; margin: 0 auto; }
     header { display: flex; justify-content: center; align-items: center; gap: 10px; margin: 4px 0 14px; text-align: center; }
@@ -73,7 +73,7 @@
         </svg>
       </div>
       <p class="emotion" id="emotion">오늘은 어떤 이야기를 나눠볼까?</p>
-      <p class="status" id="status" role="status" aria-live="polite">아래 [🎙️ 말하기 시작] 버튼을 눌러 대화를 시작하세요!</p>
+      <p class="status" id="status" role="status" aria-live="polite">준비 완료! 버튼을 눌러 대화를 시작해 보세요.</p>
       <div class="actions">
         <button id="cameraBtn" class="soft" type="button" aria-pressed="false">📷 얼굴 따라가기 켜기</button>
         <button id="keyBtn" class="soft" type="button">🔑 API 키 변경</button>
@@ -117,7 +117,7 @@
   </main>
 
   <script>
-    (function() {
+    window.addEventListener('DOMContentLoaded', function() {
       const $ = (id) => document.getElementById(id);
       const chat = $('chat');
       const statusEl = $('status');
@@ -129,12 +129,7 @@
       let cameraStream = null;
       let faceDetector = null;
       let animFrameId = 0;
-      const historyLog = [];
-
-      const vowelMap = {
-        'ㅏ':'a','ㅐ':'a','ㅑ':'a','ㅒ':'a','ㅓ':'e','ㅔ':'e','ㅕ':'e','ㅖ':'e','ㅗ':'o','ㅛ':'o','ㅜ':'u','ㅠ':'u','ㅡ':'e','ㅣ':'i',
-        'ㅘ':'a','ㅙ':'a','ㅚ':'e','ㅝ':'e','ㅞ':'e','ㅟ':'i','ㅢ':'e'
-      };
+      const historyLog = new Array();
 
       function setStatus(text) {
         statusEl.textContent = text;
@@ -159,26 +154,6 @@
         }
       }
 
-      function getHangulVowel(ch) {
-        const code = ch.charCodeAt(0) - 0xac00;
-        if (code < 0 || code > 11171) return null;
-        const list = Array.of('ㅏ','ㅐ','ㅑ','ㅒ','ㅓ','ㅔ','ㅕ','ㅖ','ㅗ','ㅘ','ㅙ','ㅚ','ㅛ','ㅜ','ㅝ','ㅞ','ㅟ','ㅠ','ㅡ','ㅢ','ㅣ');
-        return list.at(Math.floor(code / 28 / 21));
-      }
-
-      function getMouthShapes(text) {
-        const seq = [];
-        for (const ch of text) {
-          if (/[가-힣]/.test(ch)) {
-            const v = getHangulVowel(ch);
-            if (v) seq.push(vowelMap[v] || 'e');
-          } else if (/[aeiou]/i.test(ch)) {
-            seq.push(ch.toLowerCase());
-          }
-        }
-        return seq.length ? seq : Array.of('e');
-      }
-
       function setMouth(shape) {
         const sizes = {
           a: { rx: 8, ry: 7 },
@@ -195,7 +170,7 @@
 
       function stopMouth() {
         if (speechTimer) {
-          clearTimeout(speechTimer);
+          clearInterval(speechTimer);
           speechTimer = null;
         }
         setMouth('rest');
@@ -203,3 +178,32 @@
 
       function speak(text, langVal) {
         if (!('speechSynthesis' in window)) return;
+        window.speechSynthesis.cancel();
+        stopMouth();
+
+        const langCodes = { Korean:'ko-KR', English:'en-US', Japanese:'ja-JP', Spanish:'es-ES', French:'fr-FR' };
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = langCodes[langVal] || 'ko-KR';
+        utter.rate = 0.98;
+        utter.pitch = 1.06;
+
+        const cycle = new Array('a', 'e', 'o', 'e', 'i', 'u');
+        let idx = 0;
+
+        utter.onstart = () => {
+          stopMouth();
+          speechTimer = setInterval(() => {
+            setMouth(cycle.at(idx % cycle.length));
+            idx++;
+          }, 130);
+        };
+        utter.onend = () => {
+          stopMouth();
+          setStatus('다음 말을 기다리고 있어요.');
+        };
+        utter.onerror = stopMouth;
+
+        window.speechSynthesis.speak(utter);
+      }
+
+      function getFallbackAnswer(text) {
